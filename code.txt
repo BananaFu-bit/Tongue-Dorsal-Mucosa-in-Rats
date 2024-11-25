@@ -3,7 +3,6 @@ pbmcControl.data <- Read10X(data.dir = "Control.matrix")
 pbmcControl<- CreateSeuratObject(counts =pbmcControl.data, project = "Control",min.cells = 3,min.features = 200)
 pbmcCase.data <- Read10X(data.dir = "Case.matrix")
 pbmcCase<- CreateSeuratObject(counts =pbmcCase.data, project = "Case",min.cells = 3,min.features = 200)
-#1.过滤线粒体
 pbmc.combined <- merge(pbmcControl, y = pbmcCase, add.cell.ids = c("Control", "Case"), project = "ALL")
 split.list <- SplitObject(pbmc.combined , split.by = "orig.ident")
 pbmc.combined[["percent.mt"]]<-PercentageFeatureSet(pbmc.combined,pattern = "mt")
@@ -11,43 +10,39 @@ VlnPlot(pbmc.combined,features = c("nFeature_RNA","nCount_RNA","percent.mt"),nco
 plot1 <- FeatureScatter(pbmc.combined, feature1 = "nCount_RNA", feature2 = "percent.mt")
 plot2 <- FeatureScatter(pbmc.combined, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
 plot1 + plot2
-#筛选检测到基因数目超过3000或低于200的细胞
-#单个细胞中线粒体基因数目占比超过>40%
 pbmc.combined <- subset(pbmc.combined, subset = nFeature_RNA > 200 & nFeature_RNA < 3000& percent.mt < 40)
-#2.#数据标准化
 hist(colSums(pbmc.combined$RNA@data),breaks = 100,main = "Total expression before normalisation",xlab = "Sum of expression")
 pbmc.combined <- NormalizeData(pbmc.combined, normalization.method = "LogNormalize", scale.factor = 10000)
 hist(colSums(pbmc.combined$RNA@data),breaks = 100, main = "Total expression after normalisation",xlab= "Sum of expression")  
-#3.变化基因鉴定,鉴定在细胞间表达高度变化的基因，后续研究需要集中于这部分基因。Seurat内置的FindVariableFeatures()函数，首先计算每一个基因的均值和方差，并且直接模拟其关系。默认返回2000个基因。
+
 pbmc.combined <- FindVariableFeatures(pbmc.combined, selection.method = "vst", nfeatures = 2000)
 top10 <- head(VariableFeatures(pbmc.combined), 10)
 plot1 <- VariableFeaturePlot(pbmc.combined)
 plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
 plot1
-plot2
-#4. 数据缩放，线性转换缩放数据，ScaleData()函数可以实现此功能,最终每个基因均值为0，方差为1
+
 all.genes <- rownames(pbmc.combined)
 pbmc.combined <- ScaleData(pbmc.combined, features = all.genes)
-#5.#线性降维分析
+
 pbmc.combined<- RunPCA(pbmc.combined, features = VariableFeatures(object = pbmc.combined))
-print(pbmc.combined[["pca"]], dims = 1:5, nfeatures = 5)#可视化对每个主成分影响比较大的基因集
+print(pbmc.combined[["pca"]], dims = 1:5, nfeatures = 5)
 VizDimLoadings(pbmc.combined, dims = 1:2, reduction = "pca")
-DimPlot(pbmc.combined, reduction = "pca",split.by = 'ident')#两个主成分的展示
-DimHeatmap(pbmc.combined, dims = 1, cells = 500, balanced = TRUE)#DimHeatmap绘制基于单个主成分的热图，细胞和基因的排序都是基于他们的主成分分数
-DimHeatmap(pbmc.combined, dims = 1:15, cells = 500, balanced = TRUE)#展示多个主成分
+DimPlot(pbmc.combined, reduction = "pca",split.by = 'ident')
+DimHeatmap(pbmc.combined, dims = 1, cells = 500, balanced = TRUE)
+DimHeatmap(pbmc.combined, dims = 1:15, cells = 500, balanced = TRUE)
 pbmc.combined <- JackStraw(pbmc.combined, num.replicate = 100)
 pbmc.combined <- ScoreJackStraw(pbmc.combined, dims = 1:20)
 JackStrawPlot(pbmc.combined, dims = 1:20)
 ElbowPlot(object=pbmc.combined,ndims=50)
-#6.细胞聚类
+
 pbmc.combined<- FindNeighbors(pbmc.combined, dims = 1:35)
 pbmc.combined <- FindClusters(pbmc.combined, resolution = 0.6)
-head(Idents(pbmc.combined), 5)#查看细胞属于那个类群
-#7.非线性降维分析
+head(Idents(pbmc.combined), 5)
+
 pbmc.combined <- RunUMAP(pbmc.combined, dims = 1:35)
 DimPlot(pbmc.combined, reduction = "umap")
 DimPlot(pbmc.combined, reduction = "umap",label = TRUE)
-#8 寻找差异表达基因
+
 logFCfilter=0.25
 adjPvalFilter=0.05
 pbmc.combined.markers <- FindAllMarkers(pbmc.combined, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
@@ -58,50 +53,49 @@ pbmc.combined.markers %>% group_by(cluster) %>% top_n(n = 2, wt = avg_log2FC)
 top40 <- pbmc.combined.markers %>% group_by(cluster) %>% top_n(n = 40, wt = avg_log2FC)
 library(dplyr)
 top10 <- pbmc.combined.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
-DoHeatmap(pbmc.combined, features = top10$gene) + NoLegend()#展示前10个标记基因的热图
+DoHeatmap(pbmc.combined, features = top10$gene) + NoLegend()
 ggsave('top_Heatmap.pdf',width = 87.50,height = 56.3)
-table(pbmc.combined$orig.ident)#计算各组数量
-prop.table(table(Idents(pbmc.combined),pbmc.combined$orig.ident))#计算各簇细胞比例
-table(Idents(pbmc.combined), pbmc.combined$orig.ident)#计算各簇细胞数量
-FeaturePlot(pbmc.combined,features = "nCount_RNA")#转录本显示
+table(pbmc.combined$orig.ident)
+prop.table(table(Idents(pbmc.combined),pbmc.combined$orig.ident))
+table(Idents(pbmc.combined), pbmc.combined$orig.ident)
+FeaturePlot(pbmc.combined,features = "nCount_RNA")
 DotPlot(pbmc.combined, features = unique(features)) + RotatedAxis()
 VlnPlot(subset(pbmc.combined,Ptprc > 0 ), "Ptprc",group.by = "orig.ident")+ theme_bw()
-#9.周期显示
+
 View(cc.genes)
 pbmc.combined<- NormalizeData(pbmc.combined)
-g2m_genes <- cc.genes$g2m.genes ##获取G2M期marker基因
-g2m_genes <- CaseMatch(search=g2m_genes, match=rownames(pbmc.combined)) #提取pbmc矩阵中的G2M期marker基因
-s_genes <- cc.genes$s.genes  #获取S期marker基因
-s_genes <- CaseMatch(search=s_genes, match=rownames(pbmc.combined)) #提取pbmc矩阵中的S期marker基因 
-#通过提取到的g2m期基因和s期基因，使用CellCycleScoring函数，对pbmc进行细胞周期评分
+g2m_genes <- cc.genes$g2m.genes 
+g2m_genes <- CaseMatch(search=g2m_genes, match=rownames(pbmc.combined))
+s_genes <- cc.genes$s.genes  
+s_genes <- CaseMatch(search=s_genes, match=rownames(pbmc.combined))  
+
 pbmc.combined <- CellCycleScoring(pbmc.combined, g2m.features=g2m_genes, s.features=s_genes)
 colnames(pbmc.combined@meta.data)
 table(pbmc.combined$Phase)
-#可视化
+
 # Visualize the distribution of cell cycle markers across
 RidgePlot(pbmc.combined, features = c("Mcm4", "Ttms", "Mcm5", "Mcm2"), ncol = 2) 
 # Running a PCA on cell cycle genes reveals, unsurprisingly, that cells separate entirely by phase 
 pbmc.combined <- RunPCA(pbmc.combined, features = c(s_genes, g2m_genes))
-# 数据可视化，可以看到细胞按不同的细胞周期进行了分群 
+ 
 DimPlot(pbmc.combined,group.by = 'Phase')
 DimPlot(pbmc.combined, reduction = "PCA", 
         group.by = "phenotype",
         shape.by = "Phase")
- ###10.平均表达量
-AverageExpression(pbmc.combined, features = "Ptprc",group.by = "orig.ident")#平均表达值
+ 
+AverageExpression(pbmc.combined, features = "Ptprc",group.by = "orig.ident")
 ptprc<-subset(pbmc.combined,features  = "Ptprc")
-###求Krt差异表达P值
-#seurat提取表达量函数为：FetchData
-exprs <- data.frame(FetchData(object = pbmc.combined, vars.all = gene))# vars.all，提取数据的名称，可以是向量，比如：c("tSNE_1","tSNE_2", 基因名称)
+
+exprs <- data.frame(FetchData(object = pbmc.combined, vars.all = gene))
 exprs$Barcod<-rownames(exprs)
 ident<-data.frame()
-#barcode与聚类信息提取
+
 ident<-data.frame(Barcod=names(pbmc.combined@ident),orig.ident=pbmc.combined@ident)
-#通过merge函数，将表达量与聚类号对应起来
+
 c<-merge(exprs,ident,by='Barcod')
-#对其进行排序
+
 c$orig.ident<-factor(c$orig.ident,levels=c(sort(unique(immune.combined@ident))))
-#以krt基因为例
+
 # install.packages("ggpubr")
 library(ggpubr)
 p <- VlnPlot(pbmc.combined,'Krt4',group.by = 'orig.ident')
@@ -114,7 +108,7 @@ ggviolin(p$data, x = "ident", y = 'Krt4',
 View(p$data)
 VlnPlot(pbmc.combined,features = "Gsdmd",split.by = "orig.ident",cols = c("lightcoral","light skyblue"))+aes(color=pbmc.combined$orig.ident)
 
-#抖动散点图
+
 ggplot(data,aes(x=group,y=value,color=group))+geom_point(position = 'jitter', 
   size = 1.5, show.legend = FALSE)+scale_color_manual(values = c("lightcoral","lightcoral"
   ,"lightcoral","lightcoral","lightcoral","lightcoral","lightcoral","lightcoral","lightcoral"
@@ -131,22 +125,19 @@ ggplot(data,aes(x=group,y=value,color=group))+geom_point(position = 'jitter',
                geom = 'errorbar', width = 0.25, size = 0.2, color = 'black')
 
 
-###上下调基因的热图
-###平均表达量
+
 AverageExpression(pbmc.combined, features = "Ptprc",group.by = "orig.ident")
 data1= read.csv("data.csv", header = T, row.names = 1)
-#可视化
-# 绘制热图
-p1 <- pheatmap(data,  #要绘制热图的矩阵
-               color = colorRampPalette(c('blue','white','red'))(100), #热图色块颜色是从蓝到红分为100个等级
-               border_color = "black",  #热图中每个色块的边框颜色，NA表示无边框
-               scale = "row", #按行进行归一化，"column"表示按列，"none"表示不进行归一化
-               cluster_rows = TRUE, #是否对行进行聚类
-               cluster_cols = FALSE, #是否对列进行聚类
-               legend = TRUE, #是否显示图例
-               legend_breaks = c(-1, 0, 1), #设置图例的断点
-               legend_labels = c("low","","heigh"), #设置图例断点处的标签
-               show_rownames = TRUE, #是否显示行名
-               show_colnames = TRUE, #是否显示列名
-               fontsize = 8 #字体大小，可以通过fontsize_row、fontsize_col参数分别设置行列名的字体大小
-)
+
+p1 <- pheatmap(data,  
+               color = colorRampPalette(c('blue','white','red'))(100), 
+               border_color = "black",  
+               scale = "row", 
+               cluster_rows = TRUE, 
+               cluster_cols = FALSE, 
+               legend = TRUE, 
+               legend_breaks = c(-1, 0, 1),
+               legend_labels = c("low","","heigh"),
+               show_rownames = TRUE,
+               show_colnames = TRUE, 
+               fontsize = 8 )
